@@ -10448,6 +10448,8 @@ check('borne : ni un statut reconnu', evMode(evR('SuspendedEVSE', { power_entity
   check('presence : hors ligne', line('unavailable'), 'Offline');
   check('presence : en mouvement (FP1E)', line('on', 'moving'), 'Moving');
   check('presence : immobile (FP1E)', line('on', 'stationary'), 'Still');
+  check('presence : no_movement de la FP1E est immobile', line('on', 'no_movement'), 'Still');
+  check('presence : movement de la FP1E bouge', line('on', 'movement'), 'Moving');
   check('presence : no_presence en fin de maintien reste occupe', line('on', 'no_presence'), 'Occupied');
   check('presence : libre malgre un mouvement', line('off', 'moving'), 'Clear');
   check('presence : en francais', stateLine(render({ ...P, language: 'fr' }, { 'binary_sensor.p': s('on', OCC), 'sensor.mv': s('stationary') })), 'Immobile');

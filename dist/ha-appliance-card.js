@@ -14467,7 +14467,7 @@ class ApplianceCard extends HTMLElement {
       const mv = cfg.movement_entity ? stateObj(hass, cfg.movement_entity) : null;
       const mvs = mv ? stripAccents(String(mv.state).trim().toLowerCase()) : "";
       if (mode === "occupied" && mvs && !/no.?presence|none|clear|absent|unavailable|unknown/.test(mvs)) {
-        if (/stationar|static|still|immobil|breath|^presence$/.test(mvs)) mode = "still";
+        if (/no.?mov|stationar|static|still|immobil|breath|^presence$/.test(mvs)) mode = "still";
         else if (/mov|large|walk|approach|away/.test(mvs)) mode = "moving";
       }
       if (!cfg.state_show_raw || mode === "unav") stateLabel = t(hass, PRESENCE_LABELS[mode]);
