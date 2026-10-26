@@ -10422,4 +10422,69 @@ check('borne : ni un statut reconnu', evMode(evR('SuspendedEVSE', { power_entity
   check('editeur aspirateur robot : pas de seuil hors base', /data-field="away_threshold"/.test(markup(newEditor({ state_entity: 'vacuum.roomba' }))), false);
 }
 
+
+// =============================================================================
+// Presence sensors: occupied or clear, moving or still, and how far.
+// =============================================================================
+{
+  const NB = ' ';
+  const s = (state, attributes = {}, last_changed) => ({ state: String(state), attributes, ...(last_changed ? { last_changed } : {}) });
+  const ago = (min) => new Date(Date.now() - min * 60000).toISOString();
+  const OCC = { device_class: 'occupancy' };
+  const isPr = (cfg, states = {}) => /class="machine [^"]*\bpr\b/.test(render(cfg, states));
+
+  // The type: a device class, a name, or a field of its own.
+  check('presence : par la classe occupancy', isPr({ state_entity: 'binary_sensor.salon_occ' }, { 'binary_sensor.salon_occ': s('on', OCC) }), true);
+  check('presence : par la classe motion', isPr({ state_entity: 'binary_sensor.couloir' }, { 'binary_sensor.couloir': s('off', { device_class: 'motion' }) }), true);
+  check('presence : par son nom', isPr({ state_entity: 'binary_sensor.radar_bureau' }, { 'binary_sensor.radar_bureau': s('off') }), true);
+  check('presence : un champ suffit', isPr({ state_entity: 'binary_sensor.x', distance_entity: 'sensor.d' }, { 'binary_sensor.x': s('on') }), true);
+  check('presence : un aspirateur n en est pas un', isPr({ state_entity: 'vacuum.aspirateur' }, { 'vacuum.aspirateur': s('docked') }), false);
+
+  // The state line.
+  const P = { appliance_type: 'presence', state_entity: 'binary_sensor.p', movement_entity: 'sensor.mv' };
+  const line = (occ, mv) => stateLine(render(P, { 'binary_sensor.p': s(occ, OCC), ...(mv ? { 'sensor.mv': s(mv) } : {}) }));
+  check('presence : occupe', line('on'), 'Occupied');
+  check('presence : libre', line('off'), 'Clear');
+  check('presence : hors ligne', line('unavailable'), 'Offline');
+  check('presence : en mouvement (FP1E)', line('on', 'moving'), 'Moving');
+  check('presence : immobile (FP1E)', line('on', 'stationary'), 'Still');
+  check('presence : no_presence en fin de maintien reste occupe', line('on', 'no_presence'), 'Occupied');
+  check('presence : libre malgre un mouvement', line('off', 'moving'), 'Clear');
+  check('presence : en francais', stateLine(render({ ...P, language: 'fr' }, { 'binary_sensor.p': s('on', OCC), 'sensor.mv': s('stationary') })), 'Immobile');
+
+  // The drawing.
+  const D = { appliance_type: 'presence', state_entity: 'binary_sensor.p', distance_entity: 'sensor.d', range_entity: 'number.r' };
+  const html = (occ, d, r, du = 'cm', ru = 'cm') => render(D, { 'binary_sensor.p': s(occ, OCC), 'sensor.d': s(d, { unit_of_measurement: du }), 'number.r': s(r, { unit_of_measurement: ru }) });
+  const personY = (h) => Number((/<g transform="translate\(48 ([\d.]+)\) scale\(1.4\)"><g class="pr-person">/.exec(h) || [])[1]);
+  check('presence : dessin occupe', machineCls(html('on', 175, 450)).includes('pr-m-occupied'), true);
+  check('presence : dessin libre', machineCls(html('off', 0, 450)).includes('pr-m-clear'), true);
+  check('presence : la silhouette a la distance (175 cm sur 450)', personY(html('on', 175, 450)), Math.round((20 + 76 * 0.39) * 10) / 10);
+  check('presence : en metres aussi', personY(html('on', 3, 6, 'm', 'm')), 58);
+  check('presence : au bout de la portee', personY(html('on', 900, 450)), 96);
+  check('presence : sans distance, au milieu', personY(render({ appliance_type: 'presence', state_entity: 'binary_sensor.p' }, { 'binary_sensor.p': s('on', OCC) })), Math.round((20 + 76 * 0.55) * 10) / 10);
+  check('presence : portee choisie sans capteur', personY(render({ appliance_type: 'presence', state_entity: 'binary_sensor.p', distance_entity: 'sensor.d', detection_range: 4 },
+    { 'binary_sensor.p': s('on', OCC), 'sensor.d': s(2, { unit_of_measurement: 'm' }) })), 58);
+
+  // The lines.
+  const L = { ...D, illuminance_entity: 'sensor.lx', battery_entity: 'sensor.b' };
+  const lines = render(L, { 'binary_sensor.p': s('on', OCC, ago(25)), 'sensor.d': s(175, { unit_of_measurement: 'cm' }), 'number.r': s(450, { unit_of_measurement: 'cm' }),
+    'sensor.lx': s(193, { unit_of_measurement: 'lx' }), 'sensor.b': s(100, { unit_of_measurement: '%' }) });
+  check('presence : ligne distance', infoLine(lines, 'Distance'), `1.8${NB}m`);
+  check('presence : ligne lumiere', infoLine(lines, 'Light'), `193${NB}lx`);
+  check('presence : occupe depuis', infoLine(lines, 'Occupied for'), `25${NB}min`);
+  check('presence : ligne pile', infoLine(lines, 'Battery'), `100${NB}%`);
+  const clear = render(L, { 'binary_sensor.p': s('off', OCC, ago(70)), 'sensor.d': s(0, { unit_of_measurement: 'cm' }), 'number.r': s(450, { unit_of_measurement: 'cm' }),
+    'sensor.lx': s(0, { unit_of_measurement: 'lx' }) });
+  check('presence : libre depuis', infoLine(clear, 'Clear for'), '1h10');
+  check('presence : pas de distance quand libre', infoLine(clear, 'Distance'), null);
+  check('presence : pas de ligne hors ligne', infoLine(render(L, { 'binary_sensor.p': s('unavailable', OCC), 'sensor.lx': s(5, { unit_of_measurement: 'lx' }) }), 'Light'), null);
+
+  // The editor.
+  const ed = markup(newEditor({ state_entity: 'binary_sensor.p', appliance_type: 'presence' }));
+  for (const f of ['distance_entity', 'range_entity', 'movement_entity', 'illuminance_entity', 'battery_entity'])
+    check(`editeur presence : ${f}`, ed.includes(`data-toggle="${f}"`), true);
+  check('editeur presence : portee sans capteur', /detection_range/.test(markup(newEditor({ state_entity: 'binary_sensor.p', appliance_type: 'presence', range_entity: 'number.r' }))), true);
+  check('editeur : pas de champ presence ailleurs', /movement_entity/.test(markup(newEditor({ state_entity: 'sensor.w', appliance_type: 'washer' }))), false);
+}
+
 report();
